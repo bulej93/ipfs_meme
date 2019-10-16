@@ -1,18 +1,58 @@
 import React, { Component } from 'react';
-import logo from '../logo.png';
+import Web3 from 'web3';
 import './App.css';
+import Meme from '../abis/meme.json';
 
 const ipfsClient = require('ipfs-http-client')
 const ipfs = ipfsClient({ host:'ipfs.infura.io', port: 5001,  protocol:'https'})
 
 class App extends Component {
 
+  async componentWillMount () {
+    await this.loadWeb3()
+    await this.loadBlockChainData()
+  }
+
+  async loadBlockChainData () {
+    const web3 = window.web3
+    const accounts = await web3.eth.getAccounts()
+    this.setState({account: accounts[0]})
+    const networkId = await web3.eth.net.getId()
+    const networkData =  Meme.networks[networkId]
+
+    if (networkData) {
+      const abi = Meme.abi
+      const address = networkData.address
+      const contract = web3.eth.Contract(abi, address)
+      this.setState({ contract })
+      const memeHash =  await contract.methods.get().call()
+      this.setState({ memeHash })
+
+    } else {
+      window.alert('smart contract not deployed to detected network')
+    }
+
+  }
+
   constructor(props){
     super(props);
     this.state = {
       buffer:null,
-      memeHash:''
+      memeHash:'',
+      account: '',
+      contract: null
     };
+  }
+
+  async loadWeb3 () {
+    if (window.ethereum) {
+      window.web3 = new Web3(window.ethereum)
+      await window.ethereum.enable()
+    } if (window.web3) {
+      window.web3 = new Web3(window.web3.currentProvider)
+    } else {
+      window.alert('Please use metamask')
+    }
   }
 
   captureFile = (event) => {
@@ -34,13 +74,16 @@ class App extends Component {
     event.preventDefault()
     console.log('submitting file..')
     ipfs.add(this.state.buffer, (error, result) => {
-      console.log('ipfs result',result)
+      //console.log('ipfs result',result)
       const memeHash = result[0].hash
-      this.setState({ memeHash })
+      
       if (error) {
         console.error()
         return
       }
+      this.state.contract.methods.set(memeHash).send({from: this.state.account }).then((r) => {
+        this.setState({ memeHash })
+      })
     })
   }
 
